@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Upload, X, File, CheckCircle, AlertCircle, Loader, Edit3, FileText } from 'lucide-react';
+import { Upload, X, CheckCircle, AlertCircle, Loader, Edit3, FileText } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { apiService } from '../services/api';
 import toast from 'react-hot-toast';
@@ -45,7 +45,12 @@ const ScriptUpload = ({ onClose }) => {
 
   const onDrop = useCallback((acceptedFiles, rejectedFiles) => {
     if (rejectedFiles.length > 0) {
-      toast.error('Please upload a valid text file (.txt, .fountain)');
+      const rejectedFile = rejectedFiles[0];
+      if (rejectedFile.errors[0]?.code === 'file-too-large') {
+        toast.error('File is too large. Maximum size is 10MB');
+      } else {
+        toast.error('Please upload a valid script file (.txt, .pdf, .doc, .docx, .rtf, .fountain, .fdx, .celtx)');
+      }
       return;
     }
 
@@ -64,12 +69,18 @@ const ScriptUpload = ({ onClose }) => {
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: {
-      'text/plain': ['.txt'],
-      'text/fountain': ['.fountain'],
-      'application/fountain': ['.fountain']
+      'text/plain': ['.txt', '.fountain'],
+      'application/pdf': ['.pdf'],
+      'application/msword': ['.doc'],
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
+      'application/rtf': ['.rtf'],
+      'text/rtf': ['.rtf'],
+      'application/x-fountain': ['.fountain'],
+      'application/x-fdx': ['.fdx'],
+      'application/x-celtx': ['.celtx']
     },
     maxFiles: 1,
-    maxSize: 5 * 1024 * 1024 // 5MB
+    maxSize: 10 * 1024 * 1024 // 10MB
   });
 
   const handleUpload = async () => {
@@ -81,25 +92,55 @@ const ScriptUpload = ({ onClose }) => {
     setUploadState('uploading');
 
     try {
+      console.log('📤 Uploading file:', uploadedFile.name);
+      
       const formData = new FormData();
       formData.append('script', uploadedFile);
       formData.append('title', projectTitle.trim());
       formData.append('language', selectedLanguage);
       formData.append('imageStyle', selectedImageStyle);
+      formData.append('autoGenerate', 'true'); // Auto-generate for file upload too
 
+      console.log('📤 Sending file to server...');
       const response = await apiService.uploadScript(formData);
+      console.log('📥 Server response:', response.data);
       
       if (response.data.success) {
         setAnalysisResults(response.data);
-        setUploadState('success');
-        toast.success(`Script analyzed! Found ${response.data.scenes.length} scenes.`);
+        
+        // Check if images were generated
+        if (response.data.frames && response.data.frames.length > 0) {
+          const successCount = response.data.successfulFrames || 0;
+          const failCount = response.data.failedFrames || 0;
+          
+          console.log(`✅ Generated ${successCount} images (${failCount} failed)`);
+          
+          if (successCount > 0) {
+            setUploadState('success');
+            toast.success(`Generated ${successCount} storyboard images!`);
+            // Navigate to storyboard page
+            setTimeout(() => {
+              navigate(`/storyboard/${response.data.projectId}`);
+              onClose();
+            }, 1000);
+          } else {
+            setUploadState('success');
+            toast.error(`Script analyzed but image generation failed.`);
+          }
+        } else {
+          setUploadState('success');
+          toast.success(`Script analyzed! Found ${response.data.scenes.length} scenes.`);
+        }
       } else {
         throw new Error(response.data.error || 'Upload failed');
       }
     } catch (error) {
-      console.error('Upload error:', error);
+      console.error('❌ Upload error:', error);
+      console.error('Error details:', error.response?.data);
       setUploadState('error');
-      toast.error(error.response?.data?.error || 'Failed to upload script');
+      
+      const errorMessage = error.response?.data?.error || error.response?.data?.details || error.message || 'Failed to upload script';
+      toast.error(errorMessage);
     }
   };
 
@@ -112,29 +153,72 @@ const ScriptUpload = ({ onClose }) => {
     setUploadState('uploading');
 
     try {
+      console.log('📝 Submitting manual script...');
+      console.log('Title:', projectTitle);
+      console.log('Script length:', manualScript.length);
+      console.log('Language:', selectedLanguage);
+      console.log('Image Style:', selectedImageStyle);
+      
       // Create a blob from the manual script text
       const blob = new Blob([manualScript], { type: 'text/plain' });
-      const file = new File([blob], `${projectTitle}.txt`, { type: 'text/plain' });
+      const file = new File([blob], `${projectTitle.replace(/[^a-zA-Z0-9]/g, '_')}.txt`, { 
+        type: 'text/plain',
+        lastModified: Date.now()
+      });
 
       const formData = new FormData();
       formData.append('script', file);
       formData.append('title', projectTitle.trim());
       formData.append('language', selectedLanguage);
       formData.append('imageStyle', selectedImageStyle);
+      // Ask the server to auto-generate storyboard immediately for manual input
+      formData.append('autoGenerate', 'true');
 
+      console.log('📤 Sending request to server...');
       const response = await apiService.uploadScript(formData);
+      console.log('📥 Server response:', response.data);
       
       if (response.data.success) {
         setAnalysisResults(response.data);
-        setUploadState('success');
-        toast.success(`Script analyzed! Found ${response.data.scenes.length} scenes.`);
+        
+        // Check if images were generated
+        if (response.data.frames && response.data.frames.length > 0) {
+          const successCount = response.data.successfulFrames || 0;
+          const failCount = response.data.failedFrames || 0;
+          
+          console.log(`✅ Generated ${successCount} images (${failCount} failed)`);
+          
+          if (successCount > 0) {
+            setUploadState('success');
+            toast.success(`Generated ${successCount} storyboard images!`);
+            // Navigate to storyboard page
+            setTimeout(() => {
+              navigate(`/storyboard/${response.data.projectId}`);
+              onClose();
+            }, 1000);
+          } else {
+            setUploadState('success');
+            toast.error(`Script analyzed but image generation failed. You can try generating images manually.`);
+          }
+        } else {
+          // No frames in response, show success but note that generation didn't happen
+          setUploadState('success');
+          toast.success(`Script analyzed! Found ${response.data.scenes.length} scenes.`);
+          
+          if (response.data.generateError) {
+            toast.error(`Image generation failed: ${response.data.generateError}`);
+          }
+        }
       } else {
         throw new Error(response.data.error || 'Processing failed');
       }
     } catch (error) {
-      console.error('Manual script processing error:', error);
+      console.error('❌ Manual script processing error:', error);
+      console.error('Error details:', error.response?.data);
       setUploadState('error');
-      toast.error(error.response?.data?.error || 'Failed to process script');
+      
+      const errorMessage = error.response?.data?.error || error.response?.data?.details || error.message || 'Failed to process script';
+      toast.error(errorMessage);
     }
   };
 
@@ -283,7 +367,7 @@ const ScriptUpload = ({ onClose }) => {
                           {isDragActive ? 'Drop your script here...' : 'Drag & drop your script, or click to browse'}
                         </p>
                         <p className="dropzone-hint">
-                          Supports .txt and .fountain files (max 5MB)
+                          Supports .txt, .pdf, .doc, .docx, .rtf, .fountain, .fdx, .celtx (max 10MB)
                         </p>
                       </div>
                     )}
@@ -399,7 +483,7 @@ David walks through the park with his dog, smiling as children play nearby."
           </div>
         </motion.div>
 
-        <style jsx>{`
+        <style>{`
           .upload-overlay {
             position: fixed;
             top: 0;

@@ -28,6 +28,9 @@ class DatabaseService {
       // Create tables
       await this.createTables();
       
+      // Run migrations to add any missing columns
+      await this.runMigrations();
+      
     } catch (error) {
       console.error('Database initialization error:', error);
       throw error;
@@ -100,6 +103,45 @@ class DatabaseService {
 
     for (const index of indexes) {
       await this.runQuery(index);
+    }
+
+    // Run migrations to add missing columns
+    await this.runMigrations();
+  }
+
+  /**
+   * Run database migrations
+   */
+  async runMigrations() {
+    try {
+      // Check if prompt column exists in storyboard_frames
+      const tableInfo = await this.getQuery("PRAGMA table_info(storyboard_frames)");
+      const columnNames = tableInfo.map(col => col.name);
+      console.log('📋 Current storyboard_frames columns:', columnNames.join(', '));
+      
+      const hasPromptColumn = tableInfo.some(col => col.name === 'prompt');
+      const hasUpdatedAtColumn = tableInfo.some(col => col.name === 'updated_at');
+
+      // Add prompt column if it doesn't exist
+      if (!hasPromptColumn) {
+        console.log('🔄 Adding prompt column to storyboard_frames table...');
+        await this.runQuery('ALTER TABLE storyboard_frames ADD COLUMN prompt TEXT');
+        console.log('✅ Added prompt column successfully');
+      } else {
+        console.log('✓ prompt column already exists');
+      }
+
+      // Add updated_at column if it doesn't exist
+      if (!hasUpdatedAtColumn) {
+        console.log('🔄 Adding updated_at column to storyboard_frames table...');
+        await this.runQuery('ALTER TABLE storyboard_frames ADD COLUMN updated_at DATETIME');
+        console.log('✅ Added updated_at column successfully');
+      } else {
+        console.log('✓ updated_at column already exists');
+      }
+    } catch (error) {
+      console.error('Migration error:', error);
+      // Don't throw - migrations are optional and shouldn't break the app
     }
   }
 

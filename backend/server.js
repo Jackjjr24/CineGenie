@@ -8,6 +8,7 @@ require('dotenv').config();
 const emotionService = require('./services/emotionService');
 const imageService = require('./services/imageService');
 const databaseService = require('./services/databaseService');
+const fileParserService = require('./services/fileParserService');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -33,16 +34,32 @@ const storage = multer.diskStorage({
 const upload = multer({ 
   storage,
   fileFilter: (req, file, cb) => {
-    if (file.mimetype === 'text/plain' || 
-        file.originalname.endsWith('.txt') || 
-        file.originalname.endsWith('.fountain')) {
+    const allowedMimeTypes = [
+      'text/plain',
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/rtf',
+      'text/rtf'
+    ];
+    
+    const allowedExtensions = [
+      '.txt', '.fountain', '.pdf', '.doc', '.docx', '.rtf', '.fdx', '.celtx'
+    ];
+    
+    const hasValidMimeType = allowedMimeTypes.includes(file.mimetype);
+    const hasValidExtension = allowedExtensions.some(ext => 
+      file.originalname.toLowerCase().endsWith(ext)
+    );
+    
+    if (hasValidMimeType || hasValidExtension) {
       cb(null, true);
     } else {
-      cb(new Error('Only text files and fountain scripts are allowed'), false);
+      cb(new Error('Unsupported file format. Please upload .txt, .pdf, .doc, .docx, .rtf, .fountain, .fdx, or .celtx files'), false);
     }
   },
   limits: {
-    fileSize: 5 * 1024 * 1024 // 5MB limit
+    fileSize: 10 * 1024 * 1024 // 10MB limit (increased for PDFs and Word docs)
   }
 });
 
@@ -95,9 +112,12 @@ app.post('/api/upload-script', upload.single('script'), async (req, res) => {
       return res.status(400).json({ error: 'No script file uploaded' });
     }
 
-    console.log('📖 Reading file content...');
-    const scriptContent = await fs.readFile(req.file.path, 'utf8');
-    console.log('✅ File read successfully, length:', scriptContent.length);
+    console.log('📖 Parsing file content...');
+    console.log('File type:', fileParserService.getFileType(req.file.originalname));
+    
+    // Use file parser service to handle different file types
+    const scriptContent = await fileParserService.parseFile(req.file.path, req.file.originalname);
+    console.log('✅ File parsed successfully, length:', scriptContent.length);
     
     const projectTitle = req.body.title || 'Untitled Project';
     const language = req.body.language || 'en';

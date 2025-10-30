@@ -311,8 +311,8 @@ const Storyboard = () => {
   };
 
   const handleExportStoryboardPDF = async () => {
+    const loadingToast = toast.loading('Generating PDF storyboard...');
     try {
-      toast.loading('Generating PDF storyboard...');
       const response = await apiService.exportStoryboardPDF(projectId);
       
       if (response.data) {
@@ -326,11 +326,11 @@ const Storyboard = () => {
         document.body.removeChild(a);
         window.URL.revokeObjectURL(url);
         
-        toast.success('PDF storyboard exported successfully!');
+        toast.success('PDF storyboard exported successfully!', { id: loadingToast });
       }
     } catch (error) {
       console.error('PDF export error:', error);
-      toast.error('Failed to export PDF storyboard');
+      toast.error('Failed to export PDF storyboard', { id: loadingToast });
     }
   };
 

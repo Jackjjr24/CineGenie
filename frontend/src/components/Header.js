@@ -1,12 +1,32 @@
 import React from 'react';
-import { Link, useLocation } from 'react-router-dom';
-import { Film, Home, FolderOpen } from 'lucide-react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Film, Home, FolderOpen, LogOut } from 'lucide-react';
+import toast from 'react-hot-toast';
+import { signOut } from 'firebase/auth';
+import { auth } from '../config/firebase';
 
 const Header = () => {
   const location = useLocation();
+  const navigate = useNavigate();
 
   const isActive = (path) => {
     return location.pathname === path;
+  };
+
+  const handleLogout = async () => {
+    try {
+      // Sign out from Firebase
+      await signOut(auth);
+      
+      // Clear user data from localStorage
+      localStorage.removeItem('user');
+      
+      toast.success('Logged out successfully');
+      navigate('/login');
+    } catch (error) {
+      console.error('Logout error:', error);
+      toast.error('Error logging out. Please try again');
+    }
   };
 
   return (
@@ -32,6 +52,14 @@ const Header = () => {
             <FolderOpen size={18} />
             Projects
           </Link>
+          <button 
+            onClick={handleLogout}
+            className="nav-link logout-btn"
+            title="Logout"
+          >
+            <LogOut size={18} />
+            Logout
+          </button>
         </nav>
       </div>
       <style jsx>{`
@@ -99,11 +127,21 @@ const Header = () => {
           font-weight: 500;
           transition: all var(--transition-normal);
           position: relative;
+          background: none;
+          border: none;
+          cursor: pointer;
+          font-size: 1rem;
+          font-family: inherit;
         }
 
         .nav-link:hover {
           color: var(--primary-text);
           background: var(--tertiary-bg);
+        }
+
+        .logout-btn:hover {
+          color: var(--error-color);
+          background: rgba(239, 68, 68, 0.1);
         }
 
         .nav-link-active {

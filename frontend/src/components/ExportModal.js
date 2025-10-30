@@ -59,9 +59,8 @@ const ExportModal = ({
   };
 
   const loadExportHistory = () => {
-    // Load from localStorage or API
     const history = JSON.parse(localStorage.getItem('exportHistory') || '[]');
-    setExportHistory(history.slice(0, 5)); // Show last 5 exports
+    setExportHistory(history.slice(0, 5)); 
   };
 
   const handleOptionChange = (option, value) => {
@@ -112,9 +111,9 @@ const ExportModal = ({
         setExportHistory(updatedHistory);
         localStorage.setItem('exportHistory', JSON.stringify(updatedHistory));
 
-        // Handle different export types
+         
         if (exportOptions.format.includes('pdf')) {
-          // For PDF exports, create download link
+           
           const blob = new Blob([response.data], { type: 'application/pdf' });
           const url = window.URL.createObjectURL(blob);
           const a = document.createElement('a');
@@ -125,7 +124,7 @@ const ExportModal = ({
           document.body.removeChild(a);
           window.URL.revokeObjectURL(url);
         } else {
-          // For other formats, show download link
+           
           toast.success(
             <div>
               <p>Export ready!</p>
