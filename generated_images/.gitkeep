@@ -1,0 +1,3 @@
+# Keep generated_images directory but ignore all files
+*
+!.gitkeep
