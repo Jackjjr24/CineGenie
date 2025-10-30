@@ -7,7 +7,7 @@ import { apiService } from '../services/api';
 import toast from 'react-hot-toast';
 
 const ScriptUpload = ({ onClose }) => {
-  const [uploadState, setUploadState] = useState('idle'); // idle, uploading, success, error
+  const [uploadState, setUploadState] = useState('idle'); // idle, uploading, success, error, scene-selection
   const [inputMode, setInputMode] = useState('upload'); // 'upload' or 'manual'
   const [projectTitle, setProjectTitle] = useState('');
   const [uploadedFile, setUploadedFile] = useState(null);
@@ -15,6 +15,7 @@ const ScriptUpload = ({ onClose }) => {
   const [selectedLanguage, setSelectedLanguage] = useState('en');
   const [selectedImageStyle, setSelectedImageStyle] = useState('realistic');
   const [analysisResults, setAnalysisResults] = useState(null);
+  const [selectedScenes, setSelectedScenes] = useState(new Set());
   const navigate = useNavigate();
 
   // Available image styles
@@ -99,7 +100,8 @@ const ScriptUpload = ({ onClose }) => {
       formData.append('title', projectTitle.trim());
       formData.append('language', selectedLanguage);
       formData.append('imageStyle', selectedImageStyle);
-      formData.append('autoGenerate', 'true'); // Auto-generate for file upload too
+      // Don't auto-generate - show scene selection first
+      formData.append('autoGenerate', 'false');
 
       console.log('📤 Sending file to server...');
       const response = await apiService.uploadScript(formData);
@@ -107,30 +109,11 @@ const ScriptUpload = ({ onClose }) => {
       
       if (response.data.success) {
         setAnalysisResults(response.data);
-        
-        // Check if images were generated
-        if (response.data.frames && response.data.frames.length > 0) {
-          const successCount = response.data.successfulFrames || 0;
-          const failCount = response.data.failedFrames || 0;
-          
-          console.log(`✅ Generated ${successCount} images (${failCount} failed)`);
-          
-          if (successCount > 0) {
-            setUploadState('success');
-            toast.success(`Generated ${successCount} storyboard images!`);
-            // Navigate to storyboard page
-            setTimeout(() => {
-              navigate(`/storyboard/${response.data.projectId}`);
-              onClose();
-            }, 1000);
-          } else {
-            setUploadState('success');
-            toast.error(`Script analyzed but image generation failed.`);
-          }
-        } else {
-          setUploadState('success');
-          toast.success(`Script analyzed! Found ${response.data.scenes.length} scenes.`);
-        }
+        // Initialize all scenes as selected by default
+        const allSceneIds = new Set(response.data.scenes.map((_, index) => index));
+        setSelectedScenes(allSceneIds);
+        setUploadState('scene-selection');
+        toast.success(`Script analyzed! Found ${response.data.scenes.length} scenes.`);
       } else {
         throw new Error(response.data.error || 'Upload failed');
       }
@@ -171,8 +154,8 @@ const ScriptUpload = ({ onClose }) => {
       formData.append('title', projectTitle.trim());
       formData.append('language', selectedLanguage);
       formData.append('imageStyle', selectedImageStyle);
-      // Ask the server to auto-generate storyboard immediately for manual input
-      formData.append('autoGenerate', 'true');
+      // Don't auto-generate - show scene selection first
+      formData.append('autoGenerate', 'false');
 
       console.log('📤 Sending request to server...');
       const response = await apiService.uploadScript(formData);
@@ -180,35 +163,11 @@ const ScriptUpload = ({ onClose }) => {
       
       if (response.data.success) {
         setAnalysisResults(response.data);
-        
-        // Check if images were generated
-        if (response.data.frames && response.data.frames.length > 0) {
-          const successCount = response.data.successfulFrames || 0;
-          const failCount = response.data.failedFrames || 0;
-          
-          console.log(`✅ Generated ${successCount} images (${failCount} failed)`);
-          
-          if (successCount > 0) {
-            setUploadState('success');
-            toast.success(`Generated ${successCount} storyboard images!`);
-            // Navigate to storyboard page
-            setTimeout(() => {
-              navigate(`/storyboard/${response.data.projectId}`);
-              onClose();
-            }, 1000);
-          } else {
-            setUploadState('success');
-            toast.error(`Script analyzed but image generation failed. You can try generating images manually.`);
-          }
-        } else {
-          // No frames in response, show success but note that generation didn't happen
-          setUploadState('success');
-          toast.success(`Script analyzed! Found ${response.data.scenes.length} scenes.`);
-          
-          if (response.data.generateError) {
-            toast.error(`Image generation failed: ${response.data.generateError}`);
-          }
-        }
+        // Initialize all scenes as selected by default
+        const allSceneIds = new Set(response.data.scenes.map((_, index) => index));
+        setSelectedScenes(allSceneIds);
+        setUploadState('scene-selection');
+        toast.success(`Script analyzed! Found ${response.data.scenes.length} scenes.`);
       } else {
         throw new Error(response.data.error || 'Processing failed');
       }
@@ -225,22 +184,67 @@ const ScriptUpload = ({ onClose }) => {
   const handleGenerateStoryboard = async () => {
     if (!analysisResults?.projectId) return;
 
-    toast.loading('Generating storyboard...', { duration: 10000 });
+    if (selectedScenes.size === 0) {
+      toast.error('Please select at least one scene to generate');
+      return;
+    }
+
+    setUploadState('uploading');
+    toast.loading(`Generating storyboard for ${selectedScenes.size} scenes...`, { duration: 10000 });
     
     try {
-      const response = await apiService.generateStoryboard(analysisResults.projectId);
+      // Get the scene numbers from database for selected scenes
+      const selectedSceneNumbers = Array.from(selectedScenes).map(index => 
+        analysisResults.scenes[index].sceneNumber
+      );
+
+      console.log('Selected scene indices:', Array.from(selectedScenes));
+      console.log('Selected scene numbers:', selectedSceneNumbers);
+      console.log('Project ID:', analysisResults.projectId);
+      console.log('Image Style:', selectedImageStyle);
+
+      const response = await apiService.generateStoryboard(analysisResults.projectId, {
+        sceneNumbers: selectedSceneNumbers,
+        imageStyle: selectedImageStyle
+      });
       
       if (response.data.success) {
-        toast.success('Storyboard generated successfully!');
-        navigate(`/storyboard/${analysisResults.projectId}`);
-        onClose();
+        const successCount = response.data.successfulFrames || 0;
+        setUploadState('success');
+        toast.success(`Generated ${successCount} storyboard images!`);
+        
+        setTimeout(() => {
+          navigate(`/storyboard/${analysisResults.projectId}`);
+          onClose();
+        }, 1500);
       } else {
         throw new Error(response.data.error || 'Generation failed');
       }
     } catch (error) {
       console.error('Generation error:', error);
-      toast.error(error.response?.data?.error || 'Failed to generate storyboard');
+      console.error('Error response:', error.response?.data);
+      setUploadState('scene-selection');
+      toast.error(error.response?.data?.error || error.response?.data?.details || 'Failed to generate storyboard');
     }
+  };
+
+  const toggleSceneSelection = (sceneIndex) => {
+    const newSelection = new Set(selectedScenes);
+    if (newSelection.has(sceneIndex)) {
+      newSelection.delete(sceneIndex);
+    } else {
+      newSelection.add(sceneIndex);
+    }
+    setSelectedScenes(newSelection);
+  };
+
+  const selectAllScenes = () => {
+    const allSceneIds = new Set(analysisResults.scenes.map((_, index) => index));
+    setSelectedScenes(allSceneIds);
+  };
+
+  const deselectAllScenes = () => {
+    setSelectedScenes(new Set());
   };
 
   const handleViewProject = () => {
@@ -422,43 +426,98 @@ David walks through the park with his dog, smiling as children play nearby."
               </div>
             )}
 
-            {uploadState === 'success' && analysisResults && (
-              <div className="upload-status">
-                <CheckCircle className="status-icon success" />
-                <h3>Analysis Complete!</h3>
-                <p>Found {analysisResults.scenes.length} scenes with emotional analysis</p>
-                
-                <div className="emotion-preview">
-                  {analysisResults.scenes.slice(0, 3).map((scene, index) => (
-                    <div key={index} className="emotion-card">
-                      <span className="scene-number">Scene {scene.sceneNumber}</span>
-                      <span className={`emotion-tag emotion-${scene.emotion}`}>
-                        {scene.emotion}
-                      </span>
-                      <span className="confidence">
-                        {Math.round(scene.confidence * 100)}% confidence
-                      </span>
+            {uploadState === 'scene-selection' && analysisResults && (
+              <div className="scene-selection-container">
+                <div className="scene-selection-header">
+                  <h3>Select Scenes to Generate</h3>
+                  <p>Choose which scenes you want to generate storyboard frames for</p>
+                  <div className="selection-stats">
+                    <span className="stat-item">
+                      <strong>{selectedScenes.size}</strong> of <strong>{analysisResults.scenes.length}</strong> scenes selected
+                    </span>
+                  </div>
+                </div>
+
+                <div className="selection-controls">
+                  <button 
+                    className="btn btn-sm btn-secondary"
+                    onClick={selectAllScenes}
+                  >
+                    Select All
+                  </button>
+                  <button 
+                    className="btn btn-sm btn-secondary"
+                    onClick={deselectAllScenes}
+                  >
+                    Deselect All
+                  </button>
+                </div>
+
+                <div className="scenes-grid">
+                  {analysisResults.scenes.map((scene, index) => (
+                    <div
+                      key={index}
+                      className={`scene-card ${selectedScenes.has(index) ? 'selected' : ''}`}
+                      onClick={() => toggleSceneSelection(index)}
+                    >
+                      <div className="scene-card-header">
+                        <input
+                          type="checkbox"
+                          checked={selectedScenes.has(index)}
+                          onChange={() => toggleSceneSelection(index)}
+                          onClick={(e) => e.stopPropagation()}
+                          className="scene-checkbox"
+                        />
+                        <span className="scene-number">Scene {scene.sceneNumber}</span>
+                      </div>
+                      
+                      <div className="scene-content">
+                        <p className="scene-text">{scene.content.substring(0, 100)}...</p>
+                      </div>
+
+                      <div className="scene-card-footer">
+                        <span className={`emotion-tag emotion-${scene.emotion}`}>
+                          {scene.emotion}
+                        </span>
+                        <span className="confidence-badge">
+                          {Math.round(scene.confidence * 100)}%
+                        </span>
+                      </div>
                     </div>
                   ))}
-                  {analysisResults.scenes.length > 3 && (
-                    <div className="emotion-card more">
-                      +{analysisResults.scenes.length - 3} more scenes
-                    </div>
-                  )}
                 </div>
 
                 <div className="upload-actions">
                   <button 
                     className="btn btn-primary btn-lg"
                     onClick={handleGenerateStoryboard}
+                    disabled={selectedScenes.size === 0}
                   >
-                    Generate Storyboard
+                    <CheckCircle size={20} />
+                    Generate {selectedScenes.size} Storyboard{selectedScenes.size !== 1 ? 's' : ''}
                   </button>
                   <button 
                     className="btn btn-secondary"
                     onClick={handleViewProject}
                   >
                     View Project
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {uploadState === 'success' && analysisResults && (
+              <div className="upload-status">
+                <CheckCircle className="status-icon success" />
+                <h3>Storyboard Generated!</h3>
+                <p>Successfully generated storyboard frames for {selectedScenes.size} scenes</p>
+                
+                <div className="upload-actions">
+                  <button 
+                    className="btn btn-primary btn-lg"
+                    onClick={handleViewProject}
+                  >
+                    View Storyboard
                   </button>
                 </div>
               </div>
@@ -836,6 +895,139 @@ David walks through the park with his dog, smiling as children play nearby."
             margin-bottom: 0;
           }
 
+          /* Scene Selection Styles */
+          .scene-selection-container {
+            display: flex;
+            flex-direction: column;
+            gap: var(--spacing-lg);
+          }
+
+          .scene-selection-header {
+            text-align: center;
+          }
+
+          .scene-selection-header h3 {
+            margin: 0 0 var(--spacing-sm) 0;
+            color: var(--primary-text);
+          }
+
+          .scene-selection-header p {
+            margin: 0 0 var(--spacing-md) 0;
+            color: var(--secondary-text);
+          }
+
+          .selection-stats {
+            display: flex;
+            justify-content: center;
+            gap: var(--spacing-md);
+            padding: var(--spacing-md);
+            background: var(--tertiary-bg);
+            border-radius: var(--radius-md);
+            margin-top: var(--spacing-md);
+          }
+
+          .stat-item {
+            color: var(--secondary-text);
+            font-size: 0.875rem;
+          }
+
+          .stat-item strong {
+            color: var(--accent-color);
+            font-size: 1rem;
+          }
+
+          .selection-controls {
+            display: flex;
+            gap: var(--spacing-sm);
+            justify-content: center;
+          }
+
+          .scenes-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: var(--spacing-md);
+            max-height: 400px;
+            overflow-y: auto;
+            padding: var(--spacing-sm);
+          }
+
+          .scene-card {
+            background: var(--secondary-bg);
+            border: 2px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: var(--spacing-md);
+            cursor: pointer;
+            transition: all var(--transition-normal);
+            display: flex;
+            flex-direction: column;
+            gap: var(--spacing-sm);
+          }
+
+          .scene-card:hover {
+            border-color: var(--accent-color);
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-md);
+          }
+
+          .scene-card.selected {
+            border-color: var(--accent-color);
+            background: rgba(245, 158, 11, 0.1);
+          }
+
+          .scene-card-header {
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-sm);
+          }
+
+          .scene-checkbox {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+            accent-color: var(--accent-color);
+          }
+
+          .scene-number {
+            font-weight: 600;
+            color: var(--primary-text);
+            flex: 1;
+          }
+
+          .scene-content {
+            flex: 1;
+            min-height: 60px;
+          }
+
+          .scene-text {
+            font-size: 0.75rem;
+            color: var(--secondary-text);
+            line-height: 1.4;
+            margin: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+          }
+
+          .scene-card-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: var(--spacing-sm);
+            padding-top: var(--spacing-sm);
+            border-top: 1px solid var(--border-color);
+          }
+
+          .confidence-badge {
+            font-size: 0.75rem;
+            font-weight: 500;
+            color: var(--secondary-text);
+            padding: var(--spacing-xs) var(--spacing-sm);
+            background: var(--tertiary-bg);
+            border-radius: var(--radius-sm);
+          }
+
           @media (max-width: 768px) {
             .upload-modal {
               margin: var(--spacing-md);
@@ -852,6 +1044,15 @@ David walks through the park with his dog, smiling as children play nearby."
             }
 
             .upload-actions {
+              flex-direction: column;
+            }
+
+            .scenes-grid {
+              grid-template-columns: 1fr;
+              max-height: 350px;
+            }
+
+            .selection-controls {
               flex-direction: column;
             }
           }

@@ -139,6 +139,39 @@ class DatabaseService {
       } else {
         console.log('✓ updated_at column already exists');
       }
+
+      // Check if cinematography columns exist in scenes table
+      const scenesTableInfo = await this.getQuery("PRAGMA table_info(scenes)");
+      const scenesColumnNames = scenesTableInfo.map(col => col.name);
+      
+      const hasCameraSuggestion = scenesTableInfo.some(col => col.name === 'camera_suggestion');
+      const hasLightingSuggestion = scenesTableInfo.some(col => col.name === 'lighting_suggestion');
+      const hasSuggestionReasoning = scenesTableInfo.some(col => col.name === 'suggestion_reasoning');
+
+      // Add cinematography suggestion columns if they don't exist
+      if (!hasCameraSuggestion) {
+        console.log('🔄 Adding camera_suggestion column to scenes table...');
+        await this.runQuery('ALTER TABLE scenes ADD COLUMN camera_suggestion TEXT');
+        console.log('✅ Added camera_suggestion column successfully');
+      } else {
+        console.log('✓ camera_suggestion column already exists');
+      }
+
+      if (!hasLightingSuggestion) {
+        console.log('🔄 Adding lighting_suggestion column to scenes table...');
+        await this.runQuery('ALTER TABLE scenes ADD COLUMN lighting_suggestion TEXT');
+        console.log('✅ Added lighting_suggestion column successfully');
+      } else {
+        console.log('✓ lighting_suggestion column already exists');
+      }
+
+      if (!hasSuggestionReasoning) {
+        console.log('🔄 Adding suggestion_reasoning column to scenes table...');
+        await this.runQuery('ALTER TABLE scenes ADD COLUMN suggestion_reasoning TEXT');
+        console.log('✅ Added suggestion_reasoning column successfully');
+      } else {
+        console.log('✓ suggestion_reasoning column already exists');
+      }
     } catch (error) {
       console.error('Migration error:', error);
       // Don't throw - migrations are optional and shouldn't break the app
@@ -308,6 +341,22 @@ class DatabaseService {
   async updateSceneEmotion(sceneId, emotion, confidence) {
     const sql = 'UPDATE scenes SET emotion = ?, confidence = ? WHERE id = ?';
     return await this.runQuery(sql, [emotion, confidence, sceneId]);
+  }
+
+  /**
+   * Update scene with cinematography suggestions
+   * @param {number} sceneId - Scene ID
+   * @param {Object} suggestions - Suggestions object
+   * @returns {Promise} Update result
+   */
+  async updateSceneSuggestions(sceneId, suggestions) {
+    const { camera, lighting, reasoning } = suggestions;
+    const sql = `
+      UPDATE scenes 
+      SET camera_suggestion = ?, lighting_suggestion = ?, suggestion_reasoning = ? 
+      WHERE id = ?
+    `;
+    return await this.runQuery(sql, [camera, lighting, reasoning, sceneId]);
   }
 
   // STORYBOARD FRAME OPERATIONS

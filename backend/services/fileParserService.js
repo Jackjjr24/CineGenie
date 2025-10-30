@@ -1,6 +1,6 @@
 const fs = require('fs-extra');
 const path = require('path');
-const pdfParse = require('pdf-parse');
+const pdf = require('pdf-parse');
 const mammoth = require('mammoth');
 
 /**
@@ -70,7 +70,7 @@ class FileParserService {
   async parsePDF(filePath) {
     try {
       const dataBuffer = await fs.readFile(filePath);
-      const data = await pdfParse(dataBuffer);
+      const data = await pdf(dataBuffer);
       
       const textContent = data.text.trim();
       console.log(`✅ PDF parsed successfully (${data.numpages} pages, ${textContent.length} characters)`);

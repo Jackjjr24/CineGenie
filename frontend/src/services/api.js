@@ -56,8 +56,8 @@ export const apiService = {
     api.put(`/scripts/${projectId}/scenes/${sceneId}/emotion`, data),
 
   // Storyboard operations
-  generateStoryboard: (projectId, imageStyle = 'realistic') => 
-    api.post(`/generate-storyboard/${projectId}`, { imageStyle }),
+  generateStoryboard: (projectId, options = {}) => 
+    api.post(`/generate-storyboard/${projectId}`, options),
   getStoryboardFrames: (projectId) => api.get(`/storyboards/project/${projectId}`),
   regenerateFrame: (frameId, customPrompt, imageStyle = 'realistic') => 
     api.post(`/storyboards/frame/${frameId}/regenerate`, { customPrompt, imageStyle }),

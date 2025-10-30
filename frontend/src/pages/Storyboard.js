@@ -45,6 +45,7 @@ const Storyboard = () => {
   const [isExporting, setIsExporting] = useState(false);
   const [selectedImageStyle, setSelectedImageStyle] = useState('realistic');
   const [availableStyles, setAvailableStyles] = useState([]);
+  const [scenes, setScenes] = useState([]);
 
   useEffect(() => {
     if (projectId) {
@@ -76,20 +77,23 @@ const Storyboard = () => {
   const fetchProjectData = async () => {
     try {
       setLoading(true);
-      const [projectResponse, framesResponse] = await Promise.all([
+      const [projectResponse, framesResponse, scenesResponse] = await Promise.all([
         apiService.getProject(projectId),
-        apiService.getStoryboardFrames(projectId)
+        apiService.getStoryboardFrames(projectId),
+        apiService.getProjectScenes(projectId)
       ]);
 
       setProject(projectResponse.data);
+      setScenes(scenesResponse.data || []);
       
       // Validate and structure frames data
       const validatedFrames = (framesResponse.data || []).map((frame, index) => ({
         ...frame,
         id: frame.id || frame.sceneId || `frame-${index}`,
-        sceneNumber: frame.sceneNumber || index + 1,
+        sceneNumber: frame.sceneNumber || frame.scene_number || index + 1,
         emotion: frame.emotion || 'neutral',
         content: frame.content || frame.scene_content || '',
+        customPrompt: frame.prompt || frame.custom_prompt || '', // Custom prompt from editing
         imageUrl: frame.imageUrl || frame.image_url || null
       }));
       setFrames(validatedFrames);
@@ -227,7 +231,7 @@ const Storyboard = () => {
 
   const handleEditImage = (frame) => {
     setEditingFrame(frame);
-    setEditPrompt(frame.prompt || '');
+    setEditPrompt(frame.customPrompt || frame.prompt || '');
   };
 
   const handleCancelEdit = () => {
@@ -250,7 +254,7 @@ const Storyboard = () => {
         setFrames(prevFrames => 
           prevFrames.map(frame => 
             frame.id === editingFrame.id 
-              ? { ...frame, imageUrl: response.data.imageUrl, prompt: editPrompt.trim() }
+              ? { ...frame, imageUrl: response.data.imageUrl, customPrompt: editPrompt.trim(), prompt: editPrompt.trim() }
               : frame
           )
         );
@@ -613,8 +617,52 @@ const Storyboard = () => {
                         </div>
 
                         <div className="frame-content">
-                          <p>{frame.content?.substring(0, 120)}...</p>
+                          {frame.customPrompt ? (
+                            <>
+                              <p className="custom-prompt-label">
+                                <Edit3 size={12} style={{ marginRight: '4px' }} />
+                                Custom Prompt
+                              </p>
+                              <p>{frame.customPrompt.substring(0, 120)}...</p>
+                            </>
+                          ) : (
+                            <p>{frame.content?.substring(0, 120)}...</p>
+                          )}
                         </div>
+
+                        {/* Cinematography Suggestions */}
+                        {(() => {
+                          const matchingScene = scenes.find(s => s.id === frame.scene_id || s.scene_number === frame.sceneNumber);
+                          if (matchingScene && (matchingScene.camera_suggestion || matchingScene.lighting_suggestion)) {
+                            return (
+                              <div className="cinematography-suggestions">
+                                <div className="suggestions-header">
+                                  <Zap size={14} />
+                                  <span>AI Cinematography Suggestions</span>
+                                </div>
+                                {matchingScene.camera_suggestion && (
+                                  <div className="suggestion-item">
+                                    <strong>📹 Camera:</strong>
+                                    <p>{matchingScene.camera_suggestion}</p>
+                                  </div>
+                                )}
+                                {matchingScene.lighting_suggestion && (
+                                  <div className="suggestion-item">
+                                    <strong>💡 Lighting:</strong>
+                                    <p>{matchingScene.lighting_suggestion}</p>
+                                  </div>
+                                )}
+                                {matchingScene.suggestion_reasoning && (
+                                  <div className="suggestion-item reasoning">
+                                    <strong>💭 Reasoning:</strong>
+                                    <p>{matchingScene.suggestion_reasoning}</p>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          }
+                          return null;
+                        })()}
                       </motion.div>
                     )}
                   </Draggable>
@@ -1036,6 +1084,68 @@ Examples:
           color: var(--secondary-text);
           font-size: 0.875rem;
           line-height: 1.5;
+        }
+
+        .custom-prompt-label {
+          display: flex;
+          align-items: center;
+          color: var(--primary-color) !important;
+          font-weight: 600;
+          font-size: 0.75rem !important;
+          margin-bottom: var(--spacing-xs) !important;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+
+        /* Cinematography Suggestions */
+        .cinematography-suggestions {
+          padding: var(--spacing-md);
+          border-top: 1px solid var(--border-color);
+          background: linear-gradient(135deg, rgba(218, 165, 32, 0.05) 0%, rgba(218, 165, 32, 0.02) 100%);
+        }
+
+        .suggestions-header {
+          display: flex;
+          align-items: center;
+          gap: var(--spacing-xs);
+          margin-bottom: var(--spacing-sm);
+          color: var(--primary-color);
+          font-weight: 600;
+          font-size: 0.875rem;
+        }
+
+        .suggestion-item {
+          margin-bottom: var(--spacing-sm);
+        }
+
+        .suggestion-item:last-child {
+          margin-bottom: 0;
+        }
+
+        .suggestion-item strong {
+          display: block;
+          font-size: 0.75rem;
+          color: var(--text-color);
+          margin-bottom: 4px;
+          font-weight: 600;
+        }
+
+        .suggestion-item p {
+          margin: 0 !important;
+          color: var(--secondary-text) !important;
+          font-size: 0.813rem !important;
+          line-height: 1.6 !important;
+          padding-left: var(--spacing-sm);
+        }
+
+        .suggestion-item.reasoning {
+          padding-top: var(--spacing-xs);
+          border-top: 1px dashed var(--border-color);
+          margin-top: var(--spacing-sm);
+        }
+
+        .suggestion-item.reasoning strong {
+          color: var(--primary-color);
         }
 
         /* Edit Modal Styles */

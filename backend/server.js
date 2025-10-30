@@ -9,6 +9,7 @@ const emotionService = require('./services/emotionService');
 const imageService = require('./services/imageService');
 const databaseService = require('./services/databaseService');
 const fileParserService = require('./services/fileParserService');
+const geminiService = require('./services/geminiService');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -178,6 +179,14 @@ app.post('/api/generate-storyboard/:projectId', async (req, res) => {
   try {
     const { projectId } = req.params;
     
+    console.log('🎬 Generating storyboard for project:', projectId);
+    console.log('📋 Request headers:', req.headers);
+    console.log('📋 Raw request body:', req.body);
+    console.log('📋 Body type:', typeof req.body);
+    
+    const { sceneNumbers } = req.body; // Array of scene numbers to generate
+    console.log('📋 Selected scene numbers:', sceneNumbers);
+    
     // Get project to retrieve imageStyle
     const project = await databaseService.getProject(projectId);
     if (!project) {
@@ -188,17 +197,35 @@ app.post('/api/generate-storyboard/:projectId', async (req, res) => {
     const imageStyle = req.body.imageStyle || project.image_style || 'realistic';
     
     // Get scenes from database
-    const scenes = await databaseService.getScenesByProject(projectId);
+    let scenes = await databaseService.getScenesByProject(projectId);
     
     if (!scenes.length) {
       return res.status(404).json({ error: 'No scenes found for this project' });
     }
 
+    console.log('📚 All scenes:', scenes.map(s => ({ id: s.id, scene_number: s.scene_number, type: typeof s.scene_number })));
+
+    // Filter scenes if specific scene numbers were provided
+    if (sceneNumbers && Array.isArray(sceneNumbers) && sceneNumbers.length > 0) {
+      // Ensure both scene numbers and filter are numbers for proper comparison
+      const numberFilter = sceneNumbers.map(n => Number(n));
+      scenes = scenes.filter(scene => numberFilter.includes(Number(scene.scene_number)));
+      console.log(`✅ Filtered to ${scenes.length} selected scenes from ${sceneNumbers.length} requested`);
+      console.log('Selected scenes:', scenes.map(s => ({ id: s.id, sceneNumber: s.sceneNumber })));
+    }
+
+    if (scenes.length === 0) {
+      return res.status(400).json({ error: 'No valid scenes selected for generation' });
+    }
+
     const storyboardFrames = [];
+    let successfulFrames = 0;
+    let failedFrames = 0;
 
     // Generate images for each scene with selected style
     for (const scene of scenes) {
       try {
+        console.log(`🎨 Generating image for Scene ${scene.sceneNumber} (${scene.emotion})...`);
         const imageUrl = await imageService.generateImage(scene.content, scene.emotion, imageStyle);
         
         const frame = {
@@ -221,8 +248,11 @@ app.post('/api/generate-storyboard/:projectId', async (req, res) => {
         });
 
         storyboardFrames.push(frame);
+        successfulFrames++;
+        console.log(`✅ Scene ${scene.sceneNumber} image generated successfully`);
       } catch (imageError) {
-        console.error(`Error generating image for scene ${scene.sceneNumber}:`, imageError);
+        console.error(`❌ Error generating image for scene ${scene.sceneNumber}:`, imageError);
+        failedFrames++;
         // Continue with other scenes even if one fails
         storyboardFrames.push({
           sceneId: scene.id,
@@ -237,15 +267,45 @@ app.post('/api/generate-storyboard/:projectId', async (req, res) => {
       }
     }
 
+    console.log(`✅ Storyboard generation complete: ${successfulFrames} successful, ${failedFrames} failed`);
+
+    // Generate cinematography suggestions using Gemini AI
+    let cinematographySuggestions = null;
+    try {
+      console.log('🎬 Generating cinematography suggestions with Gemini AI...');
+      const geminiResult = await geminiService.generateCinematographySuggestions(scenes);
+      
+      if (geminiResult.success && geminiResult.suggestions.length > 0) {
+        cinematographySuggestions = geminiResult;
+        
+        // Save suggestions to database
+        for (const suggestion of geminiResult.suggestions) {
+          await databaseService.updateSceneSuggestions(suggestion.sceneId, {
+            camera: suggestion.camera,
+            lighting: suggestion.lighting,
+            reasoning: suggestion.reasoning
+          });
+        }
+        
+        console.log('✅ Cinematography suggestions saved to database');
+      }
+    } catch (geminiError) {
+      console.error('⚠️  Gemini suggestions failed (non-critical):', geminiError.message);
+      // Don't fail the whole request if Gemini fails
+    }
+
     res.json({
       success: true,
       projectId,
       frames: storyboardFrames,
-      message: `Generated storyboard with ${storyboardFrames.length} frames`
+      successfulFrames,
+      failedFrames,
+      cinematographySuggestions,
+      message: `Generated ${successfulFrames} storyboard frames${failedFrames > 0 ? ` (${failedFrames} failed)` : ''}`
     });
 
   } catch (error) {
-    console.error('Storyboard generation error:', error);
+    console.error('❌ Storyboard generation error:', error);
     res.status(500).json({ 
       error: 'Failed to generate storyboard',
       details: error.message 
