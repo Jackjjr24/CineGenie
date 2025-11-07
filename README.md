@@ -257,14 +257,6 @@ Run the test suite:
 npm test
 ```
 
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/amazing-feature`
-3. Commit changes: `git commit -m 'Add amazing feature'`
-4. Push to branch: `git push origin feature/amazing-feature`
-5. Open a Pull Request
-
 ## 📄 License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
@@ -276,13 +268,6 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 - **React Beautiful DnD** for smooth drag-and-drop functionality
 - **Framer Motion** for beautiful animations
 - **Film Industry** for inspiration and feedback
-
-## 📞 Support
-
-- 📧 Email: support@filmstoryboardai.com
-- 💬 Discord: [Join our community](https://discord.gg/filmstoryboardai)
-- 📖 Documentation: [Read the docs](https://docs.filmstoryboardai.com)
-- 🐛 Issues: [Report bugs](https://github.com/your-username/film-storyboard-ai/issues)
 
 ## 🔮 Roadmap
 
